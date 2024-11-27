@@ -39,14 +39,17 @@ To verify the installation, run:
 sudo docker run hello-world
 ```
 
-### 3. Login to Hugging Face Hub
+3. Login to Hugging Face Hub
 Authenticate your Hugging Face Hub account. Run the following command to log in:
 ```bash
 huggingface-cli login
 ```
 You will be prompted to enter your Hugging Face access token. Visit [Hugging Face Access Tokens](https://huggingface.co/settings/tokens) to generate one if you don't have it already.
 
-4. Start the validator node:
+4. Custom Setup for Specific Challenges
+For setup instructions related to specific challenges, please refer to the [Validator Custom Setup](validator_custom.md).
+
+5. Start the validator node:
 ```bash
 pm2 start python --name "validator_snxxx" \
 -- -m neurons.validator.validator \
