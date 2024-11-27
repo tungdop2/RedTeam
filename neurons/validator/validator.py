@@ -1,17 +1,21 @@
+import json
+import time
+import datetime
+import threading
+
+import numpy as np
+import bittensor as bt
+from cryptography.fernet import Fernet
+
 from redteam_core import (
     Commit,
     BaseValidator,
     challenge_pool,
     constants,
     MinerManager,
+    StorageManager,
     ScoringLog,
 )
-import bittensor as bt
-import time
-from cryptography.fernet import Fernet
-import numpy as np
-import time
-import datetime
 
 
 class Validator(BaseValidator):
@@ -25,6 +29,25 @@ class Validator(BaseValidator):
             challenge: MinerManager(challenge_name=challenge, challenge_incentive_weight=self.active_challenges[challenge]["challenge_incentive_weight"])
             for challenge in self.active_challenges.keys()
         }
+
+        # Setup storage manager and publish public hf_repo_id for storage
+        self.storage_manager = StorageManager(
+            cache_dir=self.config.validator.cache_dir,
+            hf_repo_id=self.config.validator.hf_repo_id,
+            sync_on_init=True
+        )
+        self.commit_repo_id_to_chain(
+            hf_repo_id=self.config.validator.hf_repo_idm,
+            max_retries=5   
+        )
+        # Start a thread to periodically commit the repo_id
+        commit_thread = threading.Thread(
+            target=self._commit_repo_id_to_chain_periodically,
+            kwargs={"hf_repo_id": self.config.validator.hf_repo_id, "interval": 600},
+            daemon=True
+        )
+        commit_thread.start()
+
         self.miner_submit = {}
         self.scoring_dates: list[str] = []
 
@@ -34,6 +57,7 @@ class Validator(BaseValidator):
         1. Updates miner commit information.
         2. Reveals commits.
         3. Runs challenges and updates scores.
+        4. Store the commits.
         """
         self.update_miner_commit()
         bt.logging.success(f"[FORWARD] Miner submit: {self.miner_submit}")
@@ -67,6 +91,8 @@ class Validator(BaseValidator):
             bt.logging.info(
                 f"[FORWARD] Revealed commits: {str(revealed_commits)[:100]}..."
             )
+
+        self.store_miner_output()
 
     def update_miner_commit(self):
         """
@@ -131,6 +157,38 @@ class Validator(BaseValidator):
                     this_challenge_revealed_commits[0].append(docker_hub_id)
                     this_challenge_revealed_commits[1].append(uid)
         return revealed_commits
+    
+    def store_miner_output(self):
+        """
+        Store miner commit to storage.
+        """
+        data_to_store: list[dict] = []
+
+        for uid, commits in self.miner_submit.items():
+            for challenge_name, commit in commits.items():
+                miner_uid, validator_uid = uid, self.uid
+                miner_ss58_address, validator_ss58_address = self.metagraph.hotkeys[miner_uid], self.metagraph.hotkeys[validator_uid]
+                # Construct data
+                data = {
+                    "miner_uid": miner_uid,
+                    "miner_ss58_address": miner_ss58_address,
+                    "validator_uid": validator_uid,
+                    "validator_ss58_address": validator_ss58_address,
+                    "challenge_name": challenge_name,
+                    "commit_timestamp": commit["commit_timestamp"],
+                    "encrypted_commit": commit["encrypted_commit"].decode(), 
+                    # encrypted_commit is bytes, convert to string to for serialization and use as identifier in storage
+                    "key": commit["key"],
+                    "commit": commit["commit"]
+                }
+                # Sign the submission
+                self._sign_with_private_key(data=data)
+
+                data_to_store.append(data)
+        try:
+            self.storage_manager.update_batch(records=data_to_store, async_update=True)
+        except Exception as e:
+            bt.logging.error(f"Failed to queue miner commit data for storage: {e}")
 
     def set_weights(self) -> None:
         """
@@ -161,6 +219,75 @@ class Validator(BaseValidator):
         else:
             bt.logging.error(f"[SET WEIGHTS]: {log}")
 
+    def _sign_with_private_key(self, data: dict):
+        """
+        Signs JSON-serializable data with the validator's private key, adding "nonce" and "signature" fields.
+
+        Args:
+            data (dict): JSON-serializable input.
+
+        Raises:
+            ValueError: If data is not serializable.
+        """
+        keypair = self.wallet.hotkey
+
+        # Ensure data is serializable
+        try:
+            serialized_data = json.dumps(data, sort_keys=True, separators=(',', ':'))
+        except TypeError as e:
+            raise ValueError(f"Data must be JSON serializable: {e}")
+    
+        nonce = str(time.time_ns())
+        # Calculate validator 's signature
+        message = f"{serialized_data}{keypair.ss58_address}{nonce}"
+        signature = f"0x{keypair.sign(message).hex()}"
+
+        # Add nonce and signature to the data
+        data["nonce"] = nonce
+        data["signature"] = signature
+
+    def commit_repo_id_to_chain(self, hf_repo_id: str, max_retries: int = 5) -> None:
+        """
+        Commits the repository ID to the blockchain, ensuring the process succeeds with retries.
+
+        Args:
+            repo_id (str): The repository ID to commit.
+            max_retries (int): Maximum number of retries in case of failure. Defaults to 5.
+
+        Raises:
+            RuntimeError: If the commitment fails after all retries.
+        """
+        for attempt in range(1, max_retries + 1):
+            try:
+                bt.logging.info(f"Attempting to commit repo ID '{hf_repo_id}' to the blockchain (Attempt {attempt})...")
+                self.subtensor.commit(
+                    wallet=self.wallet,
+                    netuid=self.config.netuid,
+                    data=hf_repo_id,
+                )
+                bt.logging.success(f"Successfully committed repo ID '{hf_repo_id}' to the blockchain.")
+                return
+            except Exception as e:
+                bt.logging.error(f"Error committing repo ID '{hf_repo_id}' on attempt {attempt}: {e}")
+                if attempt == max_retries:
+                    raise RuntimeError(
+                        f"Failed to commit repo ID '{hf_repo_id}' to the blockchain after {max_retries} attempts."
+                    )
+                
+    def _commit_repo_id_to_chain_periodically(self, hf_repo_id: str, interval: int) -> None:
+        """
+        Periodically commits the repository ID to the blockchain.
+
+        Args:
+            interval (int): Time interval in seconds between consecutive commits.
+        """
+        while True:
+            try:
+                self.commit_repo_id_to_chain(hf_repo_id=hf_repo_id)
+                bt.logging.info("Periodic commit HF repo id to chain completed successfully.")
+            except Exception as e:
+                bt.logging.error(f"Error in periodic commit for repo ID '{self.config.validator.hf_repo_id}': {e}")
+            time.sleep(interval)
 
 if __name__ == "__main__":
     with Validator() as validator:

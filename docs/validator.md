@@ -39,14 +39,23 @@ To verify the installation, run:
 sudo docker run hello-world
 ```
 
-3. Start the validator node:
+### 3. Login to Hugging Face Hub
+Authenticate your Hugging Face Hub account. Run the following command to log in:
+```bash
+huggingface-cli login
+```
+You will be prompted to enter your Hugging Face access token. Visit [Hugging Face Access Tokens](https://huggingface.co/settings/tokens) to generate one if you don't have it already.
+
+4. Start the validator node:
 ```bash
 pm2 start python --name "validator_snxxx" \
 -- -m neurons.validator.validator \
 --netuid xxx \
 --wallet.name "wallet_name" \
 --wallet.hotkey "wallet_hotkey" \
---subtensor.network finney
+--subtensor.network finney \
+--validator.cache_dir "./.cache/" \ # Your local cache dir for miners commits.
+--validator.hf_repo_id "my_username/my_repo" # Your HF repo ID for storing miners commits
 ```
 Optional flags:
 - `--logging.trace` - Enable trace logging
