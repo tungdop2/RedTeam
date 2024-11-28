@@ -37,7 +37,7 @@ class Validator(BaseValidator):
             sync_on_init=True
         )
         self.commit_repo_id_to_chain(
-            hf_repo_id=self.config.validator.hf_repo_idm,
+            hf_repo_id=self.config.validator.hf_repo_id,
             max_retries=5   
         )
         # Start a thread to periodically commit the repo_id
@@ -176,8 +176,8 @@ class Validator(BaseValidator):
                     "validator_ss58_address": validator_ss58_address,
                     "challenge_name": challenge_name,
                     "commit_timestamp": commit["commit_timestamp"],
-                    "encrypted_commit": commit["encrypted_commit"].decode(), 
-                    # encrypted_commit is bytes, convert to string to for serialization and use as identifier in storage
+                    "encrypted_commit": commit["encrypted_commit"], 
+                    # encrypted_commit implicitly converted to string by FastAPI due to lack of annotation so no decode here
                     "key": commit["key"],
                     "commit": commit["commit"]
                 }
@@ -257,13 +257,15 @@ class Validator(BaseValidator):
         Raises:
             RuntimeError: If the commitment fails after all retries.
         """
+        message = f"{self.wallet.hotkey.ss58_address}---{hf_repo_id}"
+
         for attempt in range(1, max_retries + 1):
             try:
                 bt.logging.info(f"Attempting to commit repo ID '{hf_repo_id}' to the blockchain (Attempt {attempt})...")
                 self.subtensor.commit(
                     wallet=self.wallet,
                     netuid=self.config.netuid,
-                    data=hf_repo_id,
+                    data=message,
                 )
                 bt.logging.success(f"Successfully committed repo ID '{hf_repo_id}' to the blockchain.")
                 return

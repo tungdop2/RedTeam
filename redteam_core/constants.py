@@ -1,7 +1,8 @@
 import os
 from datetime import datetime, timedelta
-from typing import Optional
-from pydantic import BaseModel, Field, field_validator, model_validator, AnyHttpUrl
+
+from pydantic import BaseModel, Field, field_validator, model_validator, AnyUrl
+
 from .common import generate_constants_docs
 
 
@@ -61,7 +62,7 @@ class Constants(BaseModel):
     QUERY_TIMEOUT: int = Field(default=4, description="Timeout for queries in seconds.")
 
     # Storage settings
-    STORAGE_URL: AnyHttpUrl = Field(
+    STORAGE_URL: AnyUrl = Field(
         default="https://example.com",
         description="URL for storing miners' work"
     )

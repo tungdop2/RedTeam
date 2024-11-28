@@ -3,4 +3,5 @@ cryptography
 docker
 pandas
 huggingface-hub
+datasets
 diskcache

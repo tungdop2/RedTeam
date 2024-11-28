@@ -11,7 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import bittensor as bt
 from diskcache import Cache
 from huggingface_hub import HfApi
-from constants import constants
+from ..constants import constants
 
 
 class StorageManager:
@@ -28,7 +28,7 @@ class StorageManager:
         # Decentralized storage on Hugging Face Hub
         self.hf_repo_id = hf_repo_id
         self.hf_api = HfApi()
-        bt.logging.info(f"Authenticated as {self.hf_api.whoami()["name"]}")
+        bt.logging.info(f"Authenticated as {self.hf_api.whoami()['name']}")
         self._validate_hf_repo()
 
         # Local cache with disk cache
@@ -71,7 +71,7 @@ class StorageManager:
 
         # Step 2: Check accessible namespaces (users/orgs)
         user_info = self.hf_api.whoami()
-        allowed_namespaces = {user_info["name"], *user_info["orgs"]}
+        allowed_namespaces = {user_info["name"]} | {org["name"] for org in user_info["orgs"] if org["roleInOrg"] == "write"}
         repo_namespace, _ = self.hf_repo_id.split("/")
         if repo_namespace not in allowed_namespaces:
             raise PermissionError(f"Token does not grant write access to the namespace '{repo_namespace}'. Accessible namespaces: {allowed_namespaces}.")
@@ -201,7 +201,6 @@ class StorageManager:
                             path_or_fileobj=json.dumps(value).encode("utf-8"),
                             path_in_repo=filepath,
                             repo_id=self.hf_repo_id,
-                            use_auth_token=True,
                             commit_message=f"Sync record {key} for {challenge_name}",
                             run_as_future=True,  # Non-blocking
                         )
@@ -212,7 +211,7 @@ class StorageManager:
             for future in as_completed(upload_futures):
                 try:
                     result = future.result()
-                    bt.logging.info(f"Uploaded to Hub successfully: {result.filepath}")
+                    bt.logging.info(f"Uploaded to Hub successfully: {result}")
                 except Exception as e:
                     bt.logging.error(f"Failed to upload file to Hub: {e}")
         else:
@@ -226,12 +225,13 @@ class StorageManager:
             interval (int): Time interval in seconds between consecutive syncs.
         """
         while True:
+            time.sleep(interval)
+
             try:
                 self.sync_cache_to_hub()
                 bt.logging.info("Periodic sync to Hugging Face Hub completed successfully.")
             except Exception as e:
                 bt.logging.error(f"Error during periodic cache sync: {e}")
-            time.sleep(interval)
 
     def _snapshot_repo(self, erase_cache: bool) -> str:
         """
@@ -314,13 +314,11 @@ class StorageManager:
         # Step 3: Sync to Decentralized Storage (Hugging Face Hub)
         try:
             filepath = f"{challenge_name}/{encrypted_commit}.json"
-            with cache.read(encrypted_commit) as file_handle:
-                self.hf_api.upload_file(
-                    path_or_fileobj=file_handle,
-                    path_in_repo=filepath,
-                    repo_id=self.hf_repo_id,
-                    use_auth_token=True,
-                )
+            self.hf_api.upload_file(
+                path_or_fileobj=json.dumps(data).encode("utf-8"),
+                path_in_repo=filepath,
+                repo_id=self.hf_repo_id,
+            )
         except KeyError:
             success = False
             errors.append(f"Record with key {encrypted_commit} not found in local cache for decentralized sync.")
@@ -330,7 +328,7 @@ class StorageManager:
 
         # Final Logging
         if success:
-            bt.logging.info(f"Record successfully updated across all storages: {encrypted_commit}")
+            bt.logging.success(f"Record successfully updated across all storages: {encrypted_commit}")
         else:
             bt.logging.error(f"Failed to update record {encrypted_commit} across all storages. Errors: {errors}")
 
