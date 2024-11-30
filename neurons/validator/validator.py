@@ -2,6 +2,7 @@ import json
 import time
 import datetime
 import threading
+import requests
 
 import numpy as np
 import bittensor as bt
@@ -250,6 +251,42 @@ class Validator(BaseValidator):
             bt.logging.success(f"[SET WEIGHTS]: {log}")
         else:
             bt.logging.error(f"[SET WEIGHTS]: {log}")
+
+    def _init_miner_submit_from_subnet(self):
+        """
+        Initializes miner_submit data from subnet by fetching the data from the API endpoint
+        and populating the miner_submit dictionary with the response.
+        """
+        try:
+            endpoint = constants.STORAGE_URL + "/fetch-miner-submit"
+            data = {"validator_ss58_address": self.metagraph.hotkeys[self.uid]}
+            self._sign_with_private_key(data)
+
+            response = requests.post(endpoint, json=data)
+
+            if response.status_code == 200:
+                data = response.json()
+                
+                for miner_ss58_address, challenges in data['miner_submit'].items():
+                    if miner_ss58_address in self.metagraph.hotkeys:
+                        miner_uid = self.metagraph.hotkeys.index(miner_ss58_address)
+                    else:
+                        # Skip if miner hotkey no longer in metagraph
+                        continue
+                    for challenge_name, commit_data in challenges.items():
+                        self.miner_submit.setdefault(miner_uid, {})[challenge_name] = {
+                            "commit_timestamp": commit_data["commit_timestamp"],
+                            "encrypted_commit": commit_data["encrypted_commit"],
+                            "key": commit_data["key"],
+                            "commit": commit_data["commit"],
+                            "log": {}
+                        }
+
+                bt.logging.success("[INIT] Miner submit data successfully initialized from storage.")
+            else:
+                bt.logging.error(f"[INIT] Failed to fetch miner submit data: {response.status_code} - {response.text}")
+        except Exception as e:
+            bt.logging.error(f"[INIT] Error initializing miner submit data from storage: {e}")
 
     def _sign_with_private_key(self, data: dict):
         """

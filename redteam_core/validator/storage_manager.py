@@ -132,6 +132,10 @@ class StorageManager:
         # Download the snapshot
         repo_snapshot_path = self._snapshot_repo(erase_cache=False, allow_patterns=allow_patterns)
 
+        if not os.path.isdir(repo_snapshot_path):
+            bt.logging.info(f"No data on the Hub for the last 14 days, skip sync.")
+            return
+
         # Build a temporary dict
         all_records = defaultdict(dict)
         for challenge_name in os.listdir(repo_snapshot_path):
