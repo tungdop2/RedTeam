@@ -4,13 +4,15 @@ import json
 import requests
 import threading
 from shutil import rmtree
-from datetime import timedelta
 from queue import Queue, Empty
+from collections import defaultdict
+from datetime import datetime, timedelta
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import bittensor as bt
 from diskcache import Cache
 from huggingface_hub import HfApi
+
 from ..constants import constants
 
 
@@ -114,6 +116,7 @@ class StorageManager:
     def sync_hub_to_cache(self, erase_local_cache=True):
         """
         Syncs data from Hugging Face Hub to the local cache.
+        This method will fetch data from the last 14 days from the Hugging Face Hub and build the cache accordingly.
 
         Args:
             erase_local_cache (bool): Whether to erase the local cache before syncing.
@@ -123,25 +126,42 @@ class StorageManager:
             rmtree(self.cache_dir)
             os.makedirs(self.cache_dir, exist_ok=True)
 
-        # Reconstruct the local cache from the downloaded snapshot
-        repo_snapshot_path = self._snapshot_repo(erase_cache=True)
-        for dirpath, _, filenames in os.walk(repo_snapshot_path):
-            relative_dir = os.path.relpath(dirpath, repo_snapshot_path)
+        # Get the list of the last 14 days' date strings in the format 'YYYY-MM-DD' and create allow patterns
+        date_strings = [(datetime.now() - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(14)]
+        allow_patterns = [f"*{date_str}/*" for date_str in date_strings]
+        # Download the snapshot
+        repo_snapshot_path = self._snapshot_repo(erase_cache=False, allow_patterns=allow_patterns)
 
-            if relative_dir == ".":
-                continue  # Skip the root directory
+        # Build a temporary dict
+        all_records = defaultdict(dict)
+        for challenge_name in os.listdir(repo_snapshot_path):
+            challenge_folder_path = os.path.join(repo_snapshot_path, challenge_name)
+            
+            if not os.path.isdir(challenge_folder_path):
+                continue
+            # For each challenge, iterate over the date folders in reverse order
+            for date_str in reversed(date_strings):
+                date_folder_path = os.path.join(challenge_folder_path, date_str)
 
-            challenge_name = relative_dir
+                if not os.path.isdir(date_folder_path):
+                    continue
+                for filename in os.listdir(date_folder_path):
+                    if filename.endswith(".json"):
+                        key = os.path.splitext(filename)[0]
+                        # Add the record to all_records if the key is not already in all_records for this challenge
+                        if key not in all_records[challenge_name]:
+                            file_path = os.path.join(date_folder_path, filename)
+                            with open(file_path, "r") as file:
+                                data = json.load(file)
+                            all_records[challenge_name][key] = data
+
+        # Populate the local cache with the collected records
+        for challenge_name, records in all_records.items():
             cache = self._get_cache(challenge_name)
-            for filename in filenames:
-                if filename.endswith(".json"):
-                    file_path = os.path.join(dirpath, filename)
-                    with open(file_path, "r") as file:
-                        data = json.load(file)
+            for key, data in records.items():
+                cache[key] = data
 
-                    # Use filename (without .json) as the key
-                    key = os.path.splitext(filename)[0]
-                    cache[key] = data
+        bt.logging.info(f"Local cache successfully built from the last 14 days of the Hugging Face Hub.")
 
     def sync_cache_to_hub(self):
         """
@@ -152,6 +172,8 @@ class StorageManager:
         2. Records in the Hub are updated if they differ from the cache.
         3. Records in the Hub that are not in the cache are left untouched.
 
+        This operation ensures only today's records are updated.
+
         WARNING: This operation may overwrite existing records in the Hub if differences are detected.
 
         Returns:
@@ -160,18 +182,21 @@ class StorageManager:
         bt.logging.warning("This operation may alter the Hub repository significantly!")
 
         # Take a snapshot of the Hugging Face Hub repository
-        repo_snapshot_path = self._snapshot_repo(erase_cache=False)
+        today = datetime.now().strftime("%Y-%m-%d")
+        repo_snapshot_path = self._snapshot_repo(erase_cache=False, allow_patterns=[f"*{today}/*"])
 
         # Step 1: Build a set of records already in the Hub
         hub_records = {}  # {challenge_name: {key: data}}
         for dirpath, _, filenames in os.walk(repo_snapshot_path):
             relative_dir = os.path.relpath(dirpath, repo_snapshot_path)
+            parts = relative_dir.split(os.sep)
 
-            if relative_dir == ".":
-                continue  # Skip the root directory
+            # Skip if not a valid challenge folder or doesn't match today's date
+            if len(parts) < 2 or not parts[-2].endswith(today):
+                continue
 
-            challenge_name = relative_dir
-            hub_records[challenge_name] = {}
+            challenge_name = parts[0]
+            hub_records[challenge_name] = {today: {}}
 
             for filename in filenames:
                 if filename.endswith(".json"):
@@ -180,25 +205,26 @@ class StorageManager:
                         hub_data = json.load(file)
 
                     key = os.path.splitext(filename)[0]  # Use filename without ".json"
-                    hub_records[challenge_name][key] = hub_data
+                    hub_records[challenge_name][today][key] = hub_data
 
         # Step 2: Compare the local cache with the Hub and prepare updates
         upload_futures = []
         for challenge_name, cache in self.local_caches.items():
             for key in cache.iterkeys():
                 value = cache[key]
-                filepath = f"{challenge_name}/{key}.json"
+                filepath = f"{challenge_name}/{today}/{key}.json"
 
                 # Determine whether to add or update
                 if (
                     challenge_name not in hub_records
-                    or key not in hub_records[challenge_name]
-                    or hub_records[challenge_name][key] != value
+                    or today not in hub_records[challenge_name]
+                    or key not in hub_records[challenge_name][today]
+                    or hub_records[challenge_name][today][key] != value
                 ):
                     # Schedule the file upload as a future
                     upload_futures.append(
                         self.hf_api.upload_file(
-                            path_or_fileobj=json.dumps(value).encode("utf-8"),
+                            path_or_fileobj=json.dumps(value, indent=4).encode("utf-8"),
                             path_in_repo=filepath,
                             repo_id=self.hf_repo_id,
                             commit_message=f"Sync record {key} for {challenge_name}",
@@ -233,7 +259,7 @@ class StorageManager:
             except Exception as e:
                 bt.logging.error(f"Error during periodic cache sync: {e}")
 
-    def _snapshot_repo(self, erase_cache: bool) -> str:
+    def _snapshot_repo(self, erase_cache: bool, allow_patterns=None, ignore_patterns=None) -> str:
         """
         Creates a snapshot of the Hugging Face Hub repository in a temporary cache directory.
         """
@@ -245,6 +271,8 @@ class StorageManager:
             repo_id=self.hf_repo_id,
             cache_dir=hf_cache_dir,
             force_download=erase_cache,
+            allow_patterns=allow_patterns,
+            ignore_patterns=ignore_patterns
         )
     
     def update_batch(self, challenge_name: str, records: list[dict]):
@@ -291,10 +319,11 @@ class StorageManager:
         success = True
         errors = []
 
+        cache_data = self._sanitize_data_for_storage(data=data)
         # Step 1: Upsert in Local Cache
         try:
             cache = self._get_cache(challenge_name)
-            cache[encrypted_commit] = data  # Upserts the record in the local cache
+            cache[encrypted_commit] = cache_data
         except Exception as e:
             success = False
             errors.append(f"Local cache update failed: {e}")
@@ -312,10 +341,11 @@ class StorageManager:
             errors.append(f"Centralized storage update failed: {e}")
 
         # Step 3: Sync to Decentralized Storage (Hugging Face Hub)
+        today = datetime.now().strftime("%Y-%m-%d")
         try:
-            filepath = f"{challenge_name}/{encrypted_commit}.json"
+            filepath = f"{challenge_name}/{today}/{encrypted_commit}.json"
             self.hf_api.upload_file(
-                path_or_fileobj=json.dumps(data).encode("utf-8"),
+                path_or_fileobj=json.dumps(cache_data, indent=4).encode("utf-8"),
                 path_in_repo=filepath,
                 repo_id=self.hf_repo_id,
             )
@@ -368,3 +398,22 @@ class StorageManager:
             except Empty:
                 pass  # No tasks in the queue, keep looping
             time.sleep(1)  # Prevent the thread from consuming too much CPU
+
+    def _sanitize_data_for_storage(self, data: dict) -> dict:
+        """
+        Sanitizes the data by removing the 'log' field and filtering sensitive information 
+        (e.g., 'miner_input' and 'miner_output') from the nested 'log' dictionaries.
+        """
+        # Create a deep copy of the data to avoid modifying the original in-place
+        cache_data = data.copy()
+        
+        # Remove the 'log' field and sanitize the nested 'log' dictionaries
+        cache_data.pop("log", None)
+        if "log" in data:
+            cache_data["log"] = {
+                date: {
+                    key: value for key, value in log_value.items() if key not in ["miner_input", "miner_output"]
+                } for date, log_value in data["log"].items()
+        }
+            
+        return cache_data

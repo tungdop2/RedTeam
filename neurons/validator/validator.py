@@ -71,6 +71,7 @@ class Validator(BaseValidator):
         validate_scoring_date = today_key not in self.scoring_dates
         if validate_scoring_hour and validate_scoring_date and revealed_commits:
             bt.logging.info(f"[FORWARD] Running scoring for {today_key}")
+            all_challenge_logs = {}
             for challenge, (commits, uids) in revealed_commits.items():
                 bt.logging.info(f"[FORWARD] Running challenge: {challenge}")
                 controller = self.active_challenges[challenge]["controller"](
@@ -78,10 +79,12 @@ class Validator(BaseValidator):
                 )
                 logs = controller.start_challenge()
                 logs = [ScoringLog(**log) for log in logs]
+                all_challenge_logs[challenge] = logs
                 self.miner_managers[challenge].update_scores(logs)
                 bt.logging.info(f"[FORWARD] Scoring for challenge: {challenge} has been completed for {today_key}")
             bt.logging.info(f"[FORWARD] All tasks: Scoring completed for {today_key}")
             self.scoring_dates.append(today_key)
+            self._update_miner_scoring_logs(all_challenge_logs=all_challenge_logs) # Update logs to miner_submit for storing
         else:
             bt.logging.warning(f"[FORWARD] Skipping scoring for {today_key}")
             bt.logging.info(
@@ -123,6 +126,7 @@ class Validator(BaseValidator):
                         "encrypted_commit": encrypted_commit,
                         "key": keys.get(challenge_name),
                         "commit": "",
+                        "log": {}
                     }
 
                 # Reveal commit if the interval has passed
@@ -158,6 +162,33 @@ class Validator(BaseValidator):
                     this_challenge_revealed_commits[1].append(uid)
         return revealed_commits
     
+    def _update_miner_scoring_logs(self, all_challenge_logs: dict[str, list[ScoringLog]]):
+        """
+        Updates miner submissions with scoring logs for each challenge.
+        This method keeps only the most recent 14 days of scoring logs in memory.
+
+        Args:
+            all_challenge_logs (dict): A dictionary of challenge names and lists of `ScoringLog` objects.
+        
+        Raises:
+            KeyError: If a miner UID is not found in `miner_submit`.
+        """
+        today = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
+        # Track the cutoff date for the TTL (14 days ago)
+        cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=14)).strftime("%Y-%m-%d")
+        
+        for challenge_name, logs in all_challenge_logs.items():
+            for log in logs:
+                miner_uid = log.uid
+                current_logs = self.miner_submit[miner_uid][challenge_name]["log"]
+
+                # Cutoff old scoring and update latest score
+                for log_date in list(current_logs.keys()):
+                    if log_date < cutoff_date:
+                        del current_logs[log_date]
+                current_logs[today] = log.model_dump()
+                self.miner_submit[miner_uid][challenge_name]["log"] = current_logs
+    
     def store_miner_output(self):
         """
         Store miner commit to storage.
@@ -179,7 +210,8 @@ class Validator(BaseValidator):
                     "encrypted_commit": commit["encrypted_commit"], 
                     # encrypted_commit implicitly converted to string by FastAPI due to lack of annotation so no decode here
                     "key": commit["key"],
-                    "commit": commit["commit"]
+                    "commit": commit["commit"],
+                    "log": commit["log"]
                 }
                 # Sign the submission
                 self._sign_with_private_key(data=data)
