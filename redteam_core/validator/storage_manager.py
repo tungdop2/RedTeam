@@ -3,6 +3,7 @@ import time
 import json
 import requests
 import threading
+import hashlib
 from shutil import rmtree
 from queue import Queue, Empty
 from collections import defaultdict
@@ -37,7 +38,7 @@ class StorageManager:
         self.cache_dir = cache_dir
         self.cache_ttl = int(timedelta(days=14).total_seconds()) # TTL set equal to a decaying period
         self.local_caches: dict[Cache] = {}
-        self.centralized_storage_url = constants.STORAGE_URL + "/upload"
+        self.centralized_storage_url = constants.STORAGE_URL.rstrip('/') + "/upload"
 
         # Queue and background thread for async updates
         self.storage_queue = Queue()
@@ -317,7 +318,7 @@ class StorageManager:
 
         # Process the record immediately
         challenge_name = data["challenge_name"]
-        encrypted_commit = data["encrypted_commit"]
+        hashed_encrypted_commit = self.hash_encrypted_commit(data["encrypted_commit"])
 
         # Track success for all storage operations
         success = True
@@ -327,7 +328,7 @@ class StorageManager:
         # Step 1: Upsert in Local Cache
         try:
             cache = self._get_cache(challenge_name)
-            cache[encrypted_commit] = cache_data
+            cache[hashed_encrypted_commit] = cache_data
         except Exception as e:
             success = False
             errors.append(f"Local cache update failed: {e}")
@@ -347,7 +348,7 @@ class StorageManager:
         # Step 3: Sync to Decentralized Storage (Hugging Face Hub)
         today = datetime.now().strftime("%Y-%m-%d")
         try:
-            filepath = f"{challenge_name}/{today}/{encrypted_commit}.json"
+            filepath = f"{challenge_name}/{today}/{hashed_encrypted_commit}.json"
             self.hf_api.upload_file(
                 path_or_fileobj=json.dumps(cache_data, indent=4).encode("utf-8"),
                 path_in_repo=filepath,
@@ -355,16 +356,16 @@ class StorageManager:
             )
         except KeyError:
             success = False
-            errors.append(f"Record with key {encrypted_commit} not found in local cache for decentralized sync.")
+            errors.append(f"Record with key {hashed_encrypted_commit} not found in local cache for decentralized sync.")
         except Exception as e:
             success = False
             errors.append(f"Decentralized storage sync failed: {e}")
 
         # Final Logging
         if success:
-            bt.logging.success(f"Record successfully updated across all storages: {encrypted_commit}")
+            bt.logging.success(f"Record successfully updated across all storages: {hashed_encrypted_commit}")
         else:
-            bt.logging.error(f"Failed to update record {encrypted_commit} across all storages. Errors: {errors}")
+            bt.logging.error(f"Failed to update record {hashed_encrypted_commit} across all storages. Errors: {errors}")
 
     def update_batch(self, records: list[dict], async_update=True):
         """
@@ -421,3 +422,9 @@ class StorageManager:
         }
             
         return cache_data
+
+    def hash_encrypted_commit(self, encrypted_commit: str) -> str:
+        """
+        Hashes the encrypted commit using SHA-256 to avoid Filename too long error.
+        """
+        return hashlib.sha256(encrypted_commit.encode()).hexdigest()
