@@ -416,10 +416,10 @@ class StorageManager:
         cache_data.pop("log", None)
         if "log" in data:
             cache_data["log"] = {
-                date: {
+                date: [{
                     key: value for key, value in log_value.items() if key not in ["miner_input", "miner_output"]
-                } for date, log_value in data["log"].items()
-        }
+                } for log_value in logs_value] for date, logs_value in data["log"].items()
+            }
             
         return cache_data
 

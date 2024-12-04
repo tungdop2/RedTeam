@@ -37,17 +37,17 @@ class Validator(BaseValidator):
             hf_repo_id=self.config.validator.hf_repo_id,
             sync_on_init=True
         )
-        self.commit_repo_id_to_chain(
-            hf_repo_id=self.config.validator.hf_repo_id,
-            max_retries=5   
-        )
-        # Start a thread to periodically commit the repo_id
-        commit_thread = threading.Thread(
-            target=self._commit_repo_id_to_chain_periodically,
-            kwargs={"hf_repo_id": self.config.validator.hf_repo_id, "interval": 600},
-            daemon=True
-        )
-        commit_thread.start()
+        # self.commit_repo_id_to_chain(
+        #     hf_repo_id=self.config.validator.hf_repo_id,
+        #     max_retries=5   
+        # )
+        # # Start a thread to periodically commit the repo_id
+        # commit_thread = threading.Thread(
+        #     target=self._commit_repo_id_to_chain_periodically,
+        #     kwargs={"hf_repo_id": self.config.validator.hf_repo_id, "interval": 600},
+        #     daemon=True
+        # )
+        # commit_thread.start()
 
         self.miner_submit = {}
         self.scoring_dates: list[str] = []
@@ -60,7 +60,7 @@ class Validator(BaseValidator):
         3. Runs challenges and updates scores.
         4. Store the commits.
         """
-        self.update_miner_commit()
+        self.update_miner_commit(self.active_challenges)
         bt.logging.success(f"[FORWARD] Miner submit: {self.miner_submit}")
 
         revealed_commits = self.get_revealed_commits()
@@ -100,12 +100,12 @@ class Validator(BaseValidator):
 
         self.store_miner_output()
 
-    def update_miner_commit(self):
+    def update_miner_commit(self, active_challenges: dict):
         """
         Queries the axons for miner commit updates and decrypts them if the reveal interval has passed.
         """
-        uids = [0]  # Change this to query multiple uids as needed
-        # uids = self.metagraph.uids
+        # uids = [1]  # Change this to query multiple uids as needed
+        uids = self.metagraph.uids
         axons = [self.metagraph.axons[i] for i in uids]
         dendrite = bt.dendrite(wallet=self.wallet)
         synapse = Commit()
@@ -120,6 +120,8 @@ class Validator(BaseValidator):
             keys = response.public_keys
 
             for challenge_name, encrypted_commit in encrypted_commit_dockers.items():
+                if challenge_name not in active_challenges:
+                    continue
                 # Update miner commit data if it's new
                 if encrypted_commit != this_miner_submit.get(challenge_name, {}).get(
                     "encrypted_commit"
@@ -189,7 +191,9 @@ class Validator(BaseValidator):
                 for log_date in list(current_logs.keys()):
                     if log_date < cutoff_date:
                         del current_logs[log_date]
-                current_logs[today] = log.model_dump()
+                if today not in current_logs:
+                    current_logs[today] = []
+                current_logs[today].append(log.model_dump())
                 self.miner_submit[miner_uid][challenge_name]["log"] = current_logs
     
     def store_miner_output(self):
@@ -240,12 +244,31 @@ class Validator(BaseValidator):
             bt.logging.debug(f"[SET WEIGHTS] {challenge} scores: {scores}")
             weights += scores * miner_manager.challenge_incentive_weight
 
+        (
+            processed_weight_uids,
+            processed_weights,
+        ) = bt.utils.weight_utils.process_weights_for_netuid(
+            uids=self.metagraph.uids,
+            weights=weights,
+            netuid=self.config.netuid,
+            subtensor=self.subtensor,
+            metagraph=self.metagraph,
+        )
+        (
+            uint_uids,
+            uint_weights,
+        ) = bt.utils.weight_utils.convert_weights_and_uids_for_emit(
+            uids=processed_weight_uids, weights=processed_weights
+        )
+
+        print(uint_weights, processed_weights)
+
         # Set weights on-chain
         result, log = self.subtensor.set_weights(
             wallet=self.wallet,
             netuid=self.config.netuid,
-            uids=uids,
-            weights=weights,
+            uids=uint_uids,
+            weights=uint_weights,
             version_key=constants.SPEC_VERSION,
         )
 
@@ -343,7 +366,7 @@ class Validator(BaseValidator):
             except Exception as e:
                 bt.logging.error(f"Error committing repo ID '{hf_repo_id}' on attempt {attempt}: {e}")
                 if attempt == max_retries:
-                    raise RuntimeError(
+                    bt.logging.error(
                         f"Failed to commit repo ID '{hf_repo_id}' to the blockchain after {max_retries} attempts."
                     )
                 
