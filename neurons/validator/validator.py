@@ -208,7 +208,7 @@ class Validator(BaseValidator):
                 miner_ss58_address, validator_ss58_address = self.metagraph.hotkeys[miner_uid], self.metagraph.hotkeys[validator_uid]
                 # Construct data
                 data = {
-                    "miner_uid": miner_uid,
+                    "miner_uid": int(miner_uid),
                     "miner_ss58_address": miner_ss58_address,
                     "validator_uid": validator_uid,
                     "validator_ss58_address": validator_ss58_address,
