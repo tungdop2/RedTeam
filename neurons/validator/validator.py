@@ -37,17 +37,14 @@ class Validator(BaseValidator):
             hf_repo_id=self.config.validator.hf_repo_id,
             sync_on_init=True
         )
-        # self.commit_repo_id_to_chain(
-        #     hf_repo_id=self.config.validator.hf_repo_id,
-        #     max_retries=5   
-        # )
-        # # Start a thread to periodically commit the repo_id
-        # commit_thread = threading.Thread(
-        #     target=self._commit_repo_id_to_chain_periodically,
-        #     kwargs={"hf_repo_id": self.config.validator.hf_repo_id, "interval": 600},
-        #     daemon=True
-        # )
-        # commit_thread.start()
+   
+        # Start a thread to periodically commit the repo_id
+        commit_thread = threading.Thread(
+            target=self.commit_repo_id_to_chain,
+            kwargs={"hf_repo_id": self.config.validator.hf_repo_id, "max_retries": 5},
+            daemon=True
+        )
+        commit_thread.start()
 
         self.miner_submit = {}
         self.scoring_dates: list[str] = []
