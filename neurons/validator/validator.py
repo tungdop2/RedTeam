@@ -76,8 +76,8 @@ class Validator(BaseValidator):
         today = datetime.datetime.now()
         current_hour = today.hour
         today_key = today.strftime("%Y-%m-%d")
-        validate_scoring_hour = current_hour >= constants.SCORING_HOUR  or True
-        validate_scoring_date = today_key not in self.scoring_dates # or True
+        validate_scoring_hour = current_hour >= constants.SCORING_HOUR
+        validate_scoring_date = today_key not in self.scoring_dates
         if validate_scoring_hour and validate_scoring_date and revealed_commits:
             bt.logging.info(f"[FORWARD LOCAL SCORING] Running scoring for {today_key}")
             all_challenge_logs = {}
