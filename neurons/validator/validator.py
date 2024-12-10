@@ -1,11 +1,12 @@
-import json
 import time
+import json
 import datetime
-import threading
 import requests
+import threading
 
 import numpy as np
 import bittensor as bt
+
 from cryptography.fernet import Fernet
 
 from redteam_core import (
