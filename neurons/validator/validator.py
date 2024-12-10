@@ -33,11 +33,11 @@ class Validator(BaseValidator):
         }
 
         # Setup storage manager and publish public hf_repo_id for storage
-        # self.storage_manager = StorageManager(
-        #     cache_dir=self.config.validator.cache_dir,
-        #     hf_repo_id=self.config.validator.hf_repo_id,
-        #     sync_on_init=True
-        # )
+        self.storage_manager = StorageManager(
+            cache_dir=self.config.validator.cache_dir,
+            hf_repo_id=self.config.validator.hf_repo_id,
+            sync_on_init=True
+        )
    
         # Start a thread to periodically commit the repo_id
         commit_thread = threading.Thread(
