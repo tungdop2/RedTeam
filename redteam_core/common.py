@@ -1,6 +1,7 @@
-import bittensor as bt
-from argparse import ArgumentParser
 import os
+import bittensor as bt
+
+from argparse import ArgumentParser
 
 
 def get_config(parser=ArgumentParser()):
