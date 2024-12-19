@@ -66,7 +66,10 @@ class Constants(BaseModel):
         default="http://20.127.163.85:9949",
         description="URL for storing miners' work"
     )
-
+    CENTRALIZED_SCORING_URL: AnyUrl = Field(
+        default="http://206.168.83.1:47920",
+        description="URL for centralized scoring"
+    )
     class Config:
         validate_assignment = True
 
