@@ -48,13 +48,13 @@ webui_auto:
   target: redteam_core.challenge_pool.webui_auto.Controller
   challenge_solve_timeout: 45
   docker_run_timeout: 600
+  same_network: true
   hostname: "webui_auto"
   protocols:
     challenger: "https"
     challenger_ssl_verify: false
     miner: "http"
     miner_ssl_verify: false
-  same_network: true
   allowed_destinations:
     - webui_auto
   resource_limits:
@@ -63,4 +63,3 @@ webui_auto:
   environment:
     ENV: "PRODUCTION"
     WUC_WEB_URL: "https://webui_auto:10001/web"
-
