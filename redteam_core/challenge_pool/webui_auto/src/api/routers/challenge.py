@@ -112,18 +112,27 @@ async def post_decrypt(miner_output: MinerOutput):
     description="This endpoint evaluates the challenge.",
 )
 async def post_score(miner_input: MinerInput, miner_output: MinerOutput):
-    decrypt_miner_output = await post_decrypt(miner_output=miner_output)
+
+    _score = 1.0
+    try:
+        decrypt_miner_output = await post_decrypt(miner_output=miner_output)
+    except Exception as e:
+        logger.error(f"Error in decrypting: {str(e)}")
+        return _score
 
     try:
         _data = json.loads(decrypt_miner_output.strip())
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error: {str(e)}")
-        raise
+        return _score
 
-    _processor = MetricsProcessor()
-    _result_dict: Dict[str, Any] = _processor(raw_data=_data)
+    try:
+        _processor = MetricsProcessor()
+        _result_dict: Dict[str, Any] = _processor(raw_data=_data)
+    except Exception as e:
+        logger.error(f"Error in processing: {str(e)}")
+        return _score
 
-    _score = 0.0
     if _result_dict["success"] is True:
         _score = 1.0
 
