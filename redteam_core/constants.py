@@ -63,11 +63,11 @@ class Constants(BaseModel):
 
     # Centralized API settings
     STORAGE_URL: AnyUrl = Field(
-        default="http://20.127.163.85:8080/storage",
+        default="http://storage.redteam.technology/storage",
         description="URL for storing miners' work"
     )
     REWARDING_URL: AnyUrl = Field(
-        default="http://20.127.163.85:8080/rewarding",
+        default="http://storage.redteam.technology/rewarding",
         description="URL for rewarding miners"
     )
 
@@ -131,7 +131,6 @@ class Constants(BaseModel):
         return point * decay_factor
 
     def is_commit_on_time(self, commit_timestamp: float) -> bool:
-
         """
         Validator do scoring every day at SCORING_HOUR.
         So the commit time should be submitted before the previous day's SCORING_HOUR.
