@@ -1,10 +1,12 @@
 # -*- coding: utf-8 -*-
 
+import logging
 from functools import lru_cache
 
-from beans_logging import logger
-
 from bot import WebUIAutomate
+
+
+logger = logging.getLogger(__name__)
 
 
 @lru_cache()

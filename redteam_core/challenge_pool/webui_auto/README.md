@@ -8,6 +8,7 @@ This challenge is designed to test/detect the ability of bot script by measuring
 - Validator mode: Includes hidden UI metrics collection
 - Scoring based on interaction patterns
 - API server for challenge interaction
+- Health check endpoint
 - Dockerfile for deployment
 - FastAPI
 - Web service
@@ -31,7 +32,7 @@ This challenge is designed to test/detect the ability of bot script by measuring
 ### 2. 📥 Download or clone the repository
 
 > [!TIP]
-> Skip this step, if you're going already downloaded the source code.
+> Skip this step, if you have already downloaded the source code.
 
 **2.1.** Prepare projects directory (if not exists):
 
@@ -49,7 +50,8 @@ cd ~/workspaces/projects
 
 ```sh
 git clone https://github.com/RedTeamSubnet/RedTeam.git && \
-    cd RedTeam/redteam_core/challenge_pool/webui_auto
+    cd RedTeam/redteam_core/challenge_pool/webui_auto && \
+    git checkout feat/webui-auto-challenge
 ```
 
 **OPTION B.** Clone the repository (for **DEVELOPMENT**: git + ssh key):
@@ -61,12 +63,6 @@ git clone --recursive git@github.com:RedTeamSubnet/RedTeam.git && \
     git submodule update --init --recursive && \
     git submodule foreach --recursive git checkout main
 ```
-
-**OPTION C.** Download source code:
-
-1. Download archived **zip** or **tar.gz** file from [**releases**](https://github.com/RedTeamSubnet/RedTeam/releases).
-2. Extract it into the projects directory.
-3. Enter into the project directory (`RedTeam/redteam_core/challenge_pool/webui_auto`).
 
 ### 3. 📦 Install dependencies
 
@@ -150,7 +146,7 @@ docker compose up -d --remove-orphans --force-recreate && \
 Check with CLI (curl):
 
 ```sh
-# Send a ping request with 'curl' to REST API server and parse JSON response with 'jq':
+# Send a ping request with 'curl' to API server and parse JSON response with 'jq':
 curl -s http://localhost:10001/ping | jq
 ```
 
@@ -180,7 +176,7 @@ docker compose down --remove-orphans
 
 ### 🌎 Environment Variables
 
-[**`.env.example`**](https://github.com/RedTeam/redteam_core/challenge_pool/webui_auto/blob/main/.env.example):
+[**`.env.example`**](https://github.com/RedTeamSubnet/RedTeam/blob/feat/webui-auto-challenge/redteam_core/challenge_pool/webui_auto/.env.example):
 
 ```sh
 ## --- Environment variable --- ##

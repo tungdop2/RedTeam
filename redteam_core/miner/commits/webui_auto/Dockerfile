@@ -1,10 +1,11 @@
 FROM selenium/standalone-chrome:131.0
 
-# Install Chromium and dependencies
+# Install python3 and pip
 RUN sudo apt-get update && sudo apt-get install -y \
     python3 \
     python3-pip \
     python3-venv \
+	net-tools \
 	curl \
 	iputils-ping \
     && sudo apt-get clean \
@@ -12,7 +13,7 @@ RUN sudo apt-get update && sudo apt-get install -y \
 
 WORKDIR /app
 
-# Install Python dependencies
+# Install python dependencies
 COPY requirements.txt .
 RUN python3 -m venv venv && \
     . venv/bin/activate && \

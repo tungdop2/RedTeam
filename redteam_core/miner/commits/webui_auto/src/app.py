@@ -3,13 +3,14 @@ from typing import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Depends, Body
-from data_types import MinerInput, MinerOutput
+
 from bot import WebUIAutomate
+from data_types import MinerInput, MinerOutput
 from dependency import get_webui_automate
 
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager
