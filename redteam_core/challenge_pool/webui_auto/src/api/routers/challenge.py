@@ -75,7 +75,7 @@ async def get_web(request: Request):
 #     summary="Decrypts the encrypted data",
 #     description="This endpoint decrypts the encrypted data.",
 # )
-async def post_decrypt(miner_output: MinerOutput):
+async def post_decrypt(miner_output: MinerOutput) -> str:
 
     ## 1. Get the private key
     _private_key_path = os.path.join(
@@ -114,14 +114,16 @@ async def post_decrypt(miner_output: MinerOutput):
 async def post_score(miner_input: MinerInput, miner_output: MinerOutput):
 
     _score = 1.0
+    _plaintext_miner_output = ""
     try:
-        decrypt_miner_output = await post_decrypt(miner_output=miner_output)
+        _plaintext_miner_output = await post_decrypt(miner_output=miner_output)
     except Exception as e:
         logger.error(f"Error in decrypting: {str(e)}")
         return _score
 
+    _data = {}
     try:
-        _data = json.loads(decrypt_miner_output.strip())
+        _data = json.loads(_plaintext_miner_output.strip())
     except json.JSONDecodeError as e:
         logger.error(f"JSON decode error: {str(e)}")
         return _score
@@ -129,12 +131,11 @@ async def post_score(miner_input: MinerInput, miner_output: MinerOutput):
     try:
         _processor = MetricsProcessor()
         _result_dict: Dict[str, Any] = _processor(raw_data=_data)
+        if _result_dict["analysis"]["score"]:
+            _score = _result_dict["analysis"]["score"]
     except Exception as e:
         logger.error(f"Error in processing: {str(e)}")
         return _score
-
-    if _result_dict["success"] is True:
-        _score = 1.0
 
     return _score
 
