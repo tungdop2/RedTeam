@@ -147,6 +147,8 @@ class WebUIAutomate:
     def cleanup(self) -> None:
         """Cleanup resources."""
         if self.driver:
+            self.driver.delete_all_cookies()
+            self.driver.execute_script("window.localStorage.clear();")
             self.driver.quit()
 
     def __call__(self, input_data: MinerInput) -> Optional[MinerOutput]:
