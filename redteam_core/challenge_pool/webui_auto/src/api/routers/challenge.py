@@ -76,7 +76,6 @@ async def get_web(request: Request):
 #     description="This endpoint decrypts the encrypted data.",
 # )
 async def post_decrypt(miner_output: MinerOutput):
-    logger.info(f"Received data: {miner_output.model_dump()}")
 
     ## 1. Get the private key
     _private_key_path = os.path.join(
