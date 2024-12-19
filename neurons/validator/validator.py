@@ -58,6 +58,12 @@ class Validator(BaseValidator):
 
         self._init_challenge_records_from_subnet(validator_ss58_address=self.metagraph.hotkeys[self.uid])
 
+        for challenge, (commits, uids) in revealed_commits.items():
+            if challenge not in self.active_challenges: 
+                continue
+            bt.logging.info(f"[FORWARD LOCAL SCORING] Running challenge: {challenge}")
+            self.miner_managers[challenge].update_uid_to_commit(uids=uids, commits=commits)
+
         if self.config.validator.use_centralized_scoring:
             self.forward_centralized_scoring(revealed_commits)
         else:
@@ -89,6 +95,10 @@ class Validator(BaseValidator):
             if all(is_scoring_done.values()):
                 break
             time.sleep(60 * 10)
+        
+        self.store_miner_commit()
+        self.store_challenge_records()
+        
     def forward_local_scoring(self, revealed_commits: dict[str, tuple[list[str], list[int]]]):
         """
         Params:
@@ -112,7 +122,6 @@ class Validator(BaseValidator):
                 if challenge not in self.active_challenges: 
                     continue
                 bt.logging.info(f"[FORWARD LOCAL SCORING] Running challenge: {challenge}")
-                self.miner_managers[challenge].update_uid_to_commit(uids=uids, commits=commits)
                 controller = self.active_challenges[challenge]["controller"](
                     challenge_name=challenge, miner_docker_images=commits, uids=uids, challenge_info=self.active_challenges[challenge]
                 )
@@ -430,6 +439,7 @@ class Validator(BaseValidator):
 
     def get_centralized_scoring_logs(self,  challenge_name: str, revealed_commits: dict[str, tuple[list[str], list[int]]]):
         is_scoring_done = False
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
         try:
             endpoint = constants.REWARDING_URL + "/get_scoring_logs"
             response = requests.get(endpoint, params={"challenge_name": challenge_name}).json()
@@ -453,6 +463,8 @@ class Validator(BaseValidator):
                                 miner_docker_image=docker_hub_id
                             )
                         )
+                        self.miner_submit[miner_uid].setdefault(challenge_name, {}).setdefault("log", {}).setdefault(today, []).append(log)
+
         except Exception as e:
             bt.logging.error(f"[GET CENTRALIZED SCORING LOGS] Error getting scoring logs: {e}")
         return scoring_logs, is_scoring_done
