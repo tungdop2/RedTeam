@@ -24,6 +24,9 @@ logger = logging.getLogger(__name__)
 class WebUIAutomate:
     """Class to handle web UI automation tasks."""
 
+    _VIEWPORT_WIDTH = 1920
+    _VIEWPORT_HEIGHT = 1080
+
     def __init__(
         self,
         username: str = "username",
@@ -55,6 +58,9 @@ class WebUIAutomate:
             options.add_argument("--ignore-certificate-errors")
             options.add_argument(
                 f"--unsafely-treat-insecure-origin-as-secure={self.web_url}"
+            )
+            options.add_argument(
+                f"--window-size={self._VIEWPORT_WIDTH},{self._VIEWPORT_HEIGHT}"
             )
 
             self.driver = webdriver.Chrome(options=options)
@@ -110,7 +116,7 @@ class WebUIAutomate:
             return True
 
         except Exception as e:
-            logger(f"Login failed: {e}")
+            logger.error(f"Login failed: {e}")
             return False
 
     def get_local_storage_data(self) -> Optional[MinerOutput]:
