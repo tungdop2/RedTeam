@@ -1,6 +1,6 @@
-# Web UI Automation Detection Challenge - Miner
+# Web UI Automation Challenge - Miner
 
-This is miner bot script repo for the Web UI Automation Detection Challenge. This is sandboxed sample code for the challenge, you can use this code to test your bot script.
+This is miner bot script repo for the Web UI Automation Challenge. This is sandboxed sample code for the challenge, you can use this code to test your bot script.
 
 ## ✨ Features
 
@@ -100,10 +100,10 @@ Check with web browser:
 To build the docker image, run the following command:
 
 ```sh
-docker build -t my_hub/webui-auto-miner:latest .
+docker build -t myhub/webui-auto-miner:0.0.1 .
 
 # For MacOS (Apple Silicon) to build AMD64:
-DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t my_hub/webui-auto-miner:latest .
+DOCKER_BUILDKIT=1 docker build --platform linux/amd64 -t myhub/webui-auto-miner:0.0.1 .
 ```
 
 ---
