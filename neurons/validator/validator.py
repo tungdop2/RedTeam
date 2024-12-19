@@ -61,7 +61,6 @@ class Validator(BaseValidator):
         for challenge, (commits, uids) in revealed_commits.items():
             if challenge not in self.active_challenges: 
                 continue
-            bt.logging.info(f"[FORWARD LOCAL SCORING] Running challenge: {challenge}")
             self.miner_managers[challenge].update_uid_to_commit(uids=uids, commits=commits)
 
         if self.config.validator.use_centralized_scoring:
