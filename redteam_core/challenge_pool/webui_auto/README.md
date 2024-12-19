@@ -1,4 +1,4 @@
-# Web UI Automation Detection Challenge
+# Web UI Automation Challenge
 
 This challenge is designed to test/detect the ability of bot script by measuring how well it can mimic human interaction with a Web UI form.
 
