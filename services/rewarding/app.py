@@ -54,13 +54,15 @@ class RewardApp:
             self.run_challenges(grouped_miner_submit)
             is_updated = self.save_submission_scoring_logs()
             if not is_updated:
+                print("[INFO] No new submission, sleeping for 60 seconds")
                 time.sleep(60)
     
     def run_challenges(self, docker_images_by_challenge: dict):
+
         for challenge_name, challenge_info in self.active_challenges.items():
             if challenge_name not in self.submission_scoring_logs:
                 self.submission_scoring_logs[challenge_name] = {}
-            not_scored_submissions = [docker_hub_id for docker_hub_id in docker_images_by_challenge.get(challenge_name) if docker_hub_id not in self.submission_scoring_logs.get(challenge_name)]
+            not_scored_submissions = [docker_hub_id for docker_hub_id in docker_images_by_challenge.get(challenge_name, []) if docker_hub_id not in self.submission_scoring_logs.get(challenge_name)]
             not_scored_submissions = list(set(not_scored_submissions))
             if len(not_scored_submissions) == 0:
                 self.is_scoring_done[challenge_name] = True
@@ -129,6 +131,7 @@ class RewardApp:
     
     def fetch_submission_scoring_logs(self, challenge_names: list):
         endpoint = constants.STORAGE_URL + "/fetch-centralized-score"
+
         submission_scoring_logs = {}
         try:
             response = requests.post(endpoint, json={"challenge_names": challenge_names})
@@ -141,16 +144,19 @@ class RewardApp:
                     if challenge_name not in submission_scoring_logs:
                         submission_scoring_logs[challenge_name] = {}
                     submission_scoring_logs[challenge_name][docker_hub_id] = log["logs"]
-                    
-                return submission_scoring_logs
             else:
                 print(f"[ERROR] Failed to fetch submission scoring logs from storage: {response.status_code} - {response.text}")
+            return submission_scoring_logs
         except Exception as e:
             print(f"[ERROR] Error fetching submission scoring logs from storage: {e}")
             return {}
     def save_submission_scoring_logs(self):
         endpoint = constants.STORAGE_URL + "/upload-centralized-score"
         try:
+            # If all submission scoring logs are empty, return False
+            if all(not value for value in self.submission_scoring_logs.values()):
+                return False
+            # If submission scoring logs are not updated, return False
             if self.previous_submission_scoring_logs == self.submission_scoring_logs:
                 return False
             response = requests.post(endpoint, json={"data": self.submission_scoring_logs})

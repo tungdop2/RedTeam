@@ -141,7 +141,7 @@ class Validator(BaseValidator):
         """
         Queries the axons for miner commit updates and decrypts them if the reveal interval has passed.
         """
-        # uids = [1]  # Change this to query multiple uids as needed
+         # uids = [1]  # Change this to query multiple uids as needed
         uids = self.metagraph.uids
         axons = [self.metagraph.axons[i] for i in uids]
         dendrite = bt.dendrite(wallet=self.wallet)
@@ -431,7 +431,7 @@ class Validator(BaseValidator):
     def get_centralized_scoring_logs(self,  challenge_name: str, revealed_commits: dict[str, tuple[list[str], list[int]]]):
         is_scoring_done = False
         try:
-            endpoint = constants.CENTRALIZED_SCORING_URL + "/get_scoring_logs"
+            endpoint = constants.REWARDING_URL + "/get_scoring_logs"
             response = requests.get(endpoint, params={"challenge_name": challenge_name}).json()
             submission_scoring_logs = response["submission_scoring_logs"]
             is_scoring_done = response["is_scoring_done"]
