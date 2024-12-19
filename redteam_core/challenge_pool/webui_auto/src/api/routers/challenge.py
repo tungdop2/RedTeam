@@ -113,7 +113,7 @@ async def post_decrypt(miner_output: MinerOutput) -> str:
 )
 async def post_score(miner_input: MinerInput, miner_output: MinerOutput):
 
-    _score = 1.0
+    _score = 0.0
     _plaintext_miner_output = ""
     try:
         _plaintext_miner_output = await post_decrypt(miner_output=miner_output)
