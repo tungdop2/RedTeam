@@ -44,7 +44,7 @@ response_quality_ranker:
 # webui_auto:
 #   name: "Web User Interface Automation"
 #   description: "Detect automated UI interactions by analyzing behavioral patterns"
-#   challenge_incentive_weight: 0.3
+#   challenge_incentive_weight: 0.0
 #   target: redteam_core.challenge_pool.webui_auto.Controller
 #   challenge_solve_timeout: 45
 #   docker_run_timeout: 600
