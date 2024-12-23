@@ -48,33 +48,101 @@ class Validator(BaseValidator):
         )
         commit_thread.start()
 
-        self.miner_submit = {}
+        self.miner_submit = self._init_miner_submit_from_cache()
         self.scoring_dates: list[str] = []
 
     def forward(self):
-        
+        self.update_miner_commit(self.active_challenges)
+        bt.logging.success(f"[FORWARD] Miner submit: {self.miner_submit}")
+        revealed_commits = self.get_revealed_commits()
+
+        self._init_challenge_records_from_subnet(validator_ss58_address=self.metagraph.hotkeys[self.uid])
+
+        for challenge, (commits, uids) in revealed_commits.items():
+            if challenge not in self.active_challenges: 
+                continue
+            self.miner_managers[challenge].update_uid_to_commit(uids=uids, commits=commits)
+
         if self.config.validator.use_centralized_scoring:
-            self.forward_centralized_scoring()
+            self.forward_centralized_scoring(revealed_commits)
         else:
-            self.forward_local_scoring()
+            self.forward_local_scoring(revealed_commits)
+    
+    def _init_miner_submit_from_cache(self):
+        miner_submit = {}
+        for challenge_name, cache in self.storage_manager.local_caches.items():
+            for key in cache:
+                submission = cache[key]
+                miner_uid = submission["miner_uid"]
+                challenge_name = submission["challenge_name"]
+                current_submission = miner_submit.setdefault(miner_uid, {}).get(challenge_name)
+                if current_submission:
+                    current_commit_timestamp = current_submission["commit_timestamp"]
+                    # Update submission if it is newer and  encrypted commit is different
+                    if current_commit_timestamp < submission["commit_timestamp"] and current_submission["encrypted_commit"] != submission["encrypted_commit"]:
+                        miner_submit[miner_uid][challenge_name] = submission
+                    # Update submission if it is older and encrypted commit is the same
+                    elif current_commit_timestamp > submission["commit_timestamp"] and current_submission["encrypted_commit"] == submission["encrypted_commit"]:
+                        miner_submit[miner_uid][challenge_name] = submission
+                else:
+                    miner_submit[miner_uid][challenge_name] = submission
 
-    def forward_centralized_scoring(self): 
-        self._init_challenge_records_from_subnet(validator_ss58_address=None, is_today_scored=True)
+        return miner_submit
 
-    def forward_local_scoring(self):
+    def forward_centralized_scoring(self, revealed_commits: dict[str, tuple[list[str], list[int]]]): 
         """
-        Executes the forward pass of the Validator:
-        1. Updates miner commit information.
-        2. Reveals commits.
+        Forward pass for centralized scoring.
+        1. Save revealed commits to storage
+        2. Get scoring logs from centralized scoring endpoint
+        3. Update scores if scoring for all submissions of a challenge is done
+        """
+        bt.logging.info(f"[FORWARD CENTRALIZED SCORING] Saving Revealed commits to storage ...")
+        self.store_miner_commit()
+        
+        today = datetime.datetime.now()
+        today_key = today.strftime("%Y-%m-%d")
+        current_hour = today.hour
+        validate_scoring_hour = current_hour >= constants.SCORING_HOUR
+        validate_scoring_date = today_key not in self.scoring_dates
+        if validate_scoring_hour and validate_scoring_date and revealed_commits:
+            is_scoring_done = {
+                challenge_name: False for challenge_name in self.active_challenges.keys()
+            }
+            while True:
+                for challenge_name in self.active_challenges.keys():
+                    if is_scoring_done[challenge_name]:
+                        continue
+                    bt.logging.info(f"[FORWARD CENTRALIZED SCORING] Getting scoring logs from centralized scoring endpoint for challenge: {challenge_name} ...")
+                    scoring_logs, is_done = self.get_centralized_scoring_logs(challenge_name, revealed_commits)
+                    is_scoring_done[challenge_name] = is_done
+                    if is_done:
+                        bt.logging.info(f"[FORWARD CENTRALIZED SCORING] Scoring done for challenge: {challenge_name} ...")
+                        self.miner_managers[challenge_name].update_scores(scoring_logs)
+                if all(is_scoring_done.values()):
+                    break
+                time.sleep(60 * 10)
+            
+            self.scoring_dates.append(today_key)
+            self.store_miner_commit()
+            self.store_challenge_records()
+        else:
+            bt.logging.warning(f"[FORWARD CENTRALIZED SCORING] Skipping scoring for {today_key}")
+            bt.logging.info(
+                f"[FORWARD CENTRALIZED SCORING] Current hour: {current_hour}, Scoring hour: {constants.SCORING_HOUR}"
+            )
+            bt.logging.info(f"[FORWARD CENTRALIZED SCORING] Scoring dates: {self.scoring_dates}")
+            
+    def forward_local_scoring(self, revealed_commits: dict[str, tuple[list[str], list[int]]]):
+        """
+        Params:
+            revealed_commits (dict): A dictionary where the key is the challenge name and the value is a tuple:
+                (list of docker_hub_ids, list of uids)
+        Executes the forward pass of the Validator: 
+        1. Get revealed commits
+        2. Validate if scoring is due
         3. Runs challenges and updates scores.
         4. Store the commits.
         """
-        self.update_miner_commit(self.active_challenges)
-        bt.logging.success(f"[FORWARD LOCAL SCORING] Miner submit: {self.miner_submit}")
-
-        revealed_commits = self.get_revealed_commits()
-        self._init_challenge_records_from_subnet(validator_ss58_address=self.metagraph.hotkeys[self.uid], is_today_scored=False)
-
         today = datetime.datetime.now()
         current_hour = today.hour
         today_key = today.strftime("%Y-%m-%d")
@@ -87,7 +155,6 @@ class Validator(BaseValidator):
                 if challenge not in self.active_challenges: 
                     continue
                 bt.logging.info(f"[FORWARD LOCAL SCORING] Running challenge: {challenge}")
-                self.miner_managers[challenge].update_uid_to_commit(uids=uids, commits=commits)
                 controller = self.active_challenges[challenge]["controller"](
                     challenge_name=challenge, miner_docker_images=commits, uids=uids, challenge_info=self.active_challenges[challenge]
                 )
@@ -110,13 +177,13 @@ class Validator(BaseValidator):
                 f"[FORWARD LOCAL SCORING] Revealed commits: {str(revealed_commits)[:100]}..."
             )
 
-        self.store_miner_output()
+        self.store_miner_commit()
 
     def update_miner_commit(self, active_challenges: dict):
         """
         Queries the axons for miner commit updates and decrypts them if the reveal interval has passed.
         """
-        # uids = [1]  # Change this to query multiple uids as needed
+         # uids = [1]  # Change this to query multiple uids as needed
         uids = self.metagraph.uids
         axons = [self.metagraph.axons[i] for i in uids]
         dendrite = bt.dendrite(wallet=self.wallet)
@@ -133,6 +200,7 @@ class Validator(BaseValidator):
 
             for challenge_name, encrypted_commit in encrypted_commit_dockers.items():
                 if challenge_name not in active_challenges:
+                    this_miner_submit.pop(challenge_name, None)
                     continue
                 # Update miner commit data if it's new
                 if encrypted_commit != this_miner_submit.get(challenge_name, {}).get(
@@ -177,6 +245,7 @@ class Validator(BaseValidator):
                     docker_hub_id = commit["commit"].split("---")[1]
                     this_challenge_revealed_commits[0].append(docker_hub_id)
                     this_challenge_revealed_commits[1].append(uid)
+                    commit["docker_hub_id"] = docker_hub_id
         return revealed_commits
     
     def _update_miner_scoring_logs(self, all_challenge_logs: dict[str, list[ScoringLog]]):
@@ -208,7 +277,7 @@ class Validator(BaseValidator):
                 current_logs[today].append(log.model_dump())
                 self.miner_submit[miner_uid][challenge_name]["log"] = current_logs
     
-    def store_miner_output(self):
+    def store_miner_commit(self):
         """
         Store miner commit to storage.
         """
@@ -329,7 +398,7 @@ class Validator(BaseValidator):
         except Exception as e:
             bt.logging.error(f"[INIT] Error initializing miner submit data from storage: {e}")
 
-    def _init_challenge_records_from_subnet(self, validator_ss58_address=None, is_today_scored: bool = True):
+    def _init_challenge_records_from_subnet(self, validator_ss58_address=None, is_today_scored: bool = False):
         try:
             endpoint = constants.STORAGE_URL + "/fetch-challenge-records"
             data = {
@@ -401,6 +470,38 @@ class Validator(BaseValidator):
         }
         self._sign_with_private_key(data)
         self.storage_manager.update_repo_id(data)
+
+    def get_centralized_scoring_logs(self,  challenge_name: str, revealed_commits: dict[str, tuple[list[str], list[int]]]):
+        is_scoring_done = False
+        today = datetime.datetime.now().strftime("%Y-%m-%d")
+        try:
+            endpoint = constants.REWARDING_URL + "/get_scoring_logs"
+            response = requests.get(endpoint, params={"challenge_name": challenge_name}).json()
+            submission_scoring_logs = response["submission_scoring_logs"]
+            is_scoring_done = response["is_scoring_done"]
+            scoring_logs = []
+            mapping_dockerid_miner_id = {}
+            docker_ids, miner_uids = revealed_commits.get(challenge_name, ([], []))
+            for docker_hub_id, miner_uid in zip(docker_ids, miner_uids):
+                mapping_dockerid_miner_id[docker_hub_id] = miner_uid
+            for docker_hub_id, logs in submission_scoring_logs.items():
+                if docker_hub_id in mapping_dockerid_miner_id:
+                    miner_uid = mapping_dockerid_miner_id[docker_hub_id]
+                    for log in logs:
+                        scoring_logs.append(
+                            ScoringLog(
+                                uid=miner_uid, 
+                                score=log["score"], 
+                                miner_input=log["miner_input"], 
+                                miner_output=log["miner_output"], 
+                                miner_docker_image=docker_hub_id
+                            )
+                        )
+                        self.miner_submit[miner_uid].setdefault(challenge_name, {}).setdefault("log", {}).setdefault(today, []).append(log)
+
+        except Exception as e:
+            bt.logging.error(f"[GET CENTRALIZED SCORING LOGS] Error getting scoring logs: {e}")
+        return scoring_logs, is_scoring_done
 
     def commit_repo_id_to_chain(self, hf_repo_id: str, max_retries: int = 5) -> None:
         """

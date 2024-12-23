@@ -49,13 +49,13 @@ class Constants(BaseModel):
 
     # Time intervals (in seconds)
     REVEAL_INTERVAL: int = Field(
-        default=60 * 1, description="Time interval for revealing commits."
+        default=3600 * 24, description="Time interval for revealing commits."
     )
     EPOCH_LENGTH: int = Field(
         default=3600, description="Length of an epoch in seconds."
     )
     MIN_VALIDATOR_STAKE: int = Field(
-        default=-1, description="Minimum validator stake required."
+        default=10_000, description="Minimum validator stake required."
     )
 
     # Query settings
@@ -63,9 +63,14 @@ class Constants(BaseModel):
         default=30, description="Timeout for queries in seconds."
     )
 
-    # Storage settings
+    # Centralized API settings
     STORAGE_URL: AnyUrl = Field(
-        default="http://20.127.163.85:9949", description="URL for storing miners' work"
+        default="http://storage.redteam.technology/storage",
+        description="URL for storing miners' work",
+    )
+    REWARDING_URL: AnyUrl = Field(
+        default="http://storage.redteam.technology/rewarding",
+        description="URL for rewarding miners",
     )
 
     class Config:
@@ -136,8 +141,7 @@ class Constants(BaseModel):
             hour=self.SCORING_HOUR, minute=0, second=0, microsecond=0
         )
         previous_day_closed_time = today_closed_time - timedelta(days=1)
-        # return commit_timestamp < previous_day_closed_time.timestamp()
-        return True
+        return commit_timestamp < previous_day_closed_time.timestamp()
 
 
 constants = Constants()

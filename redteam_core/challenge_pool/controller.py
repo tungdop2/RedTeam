@@ -62,7 +62,7 @@ class Controller:
             - miner_scores: A dictionary mapping each miner Docker image to their scores.
             - logs: A dictionary of logs for each miner, detailing the input, output, and score.
         """
-        self._clear_all_container()
+        # self._clear_all_container()
         self._build_challenge_image()
         self._remove_challenge_container()
         self._create_network(self.local_network)
@@ -85,7 +85,8 @@ class Controller:
             if not is_image_valid:
                 continue
             bt.logging.info(f"[Controller] Running miner {uid}: {miner_docker_image}")
-            self._clear_miner_container_by_image(miner_docker_image)
+            self._clear_container_by_port(constants.MINER_DOCKER_PORT)
+
             docker_run_start_time = time.time()
             kwargs = {}
             if self.resource_limits.get("cuda_device_ids") is not None:
@@ -135,25 +136,27 @@ class Controller:
                         "uid": uid,
                     }
                 )
+            self._clear_container_by_port(constants.MINER_DOCKER_PORT)
         self._remove_challenge_container()
         return logs
 
-    def _clear_miner_container_by_image(self, miner_docker_image):
+    def _clear_container_by_port(self, port):
         """
-        Stops and removes all running Docker containers for the miner Docker image.
+        Stops and removes all running Docker containers by running port.
         This is useful for cleaning up the environment before starting a new challenge.
-
-        Args:
-            miner_docker_image: The Docker image for the miner to be removed.
         """
         containers = self.docker_client.containers.list(all=True)
 
         for container in containers:
-            tags = container.image.tags
-            tags = [t.split(":")[0] for t in tags]
-            if miner_docker_image in tags:
-                res = container.remove(force=True)
-                bt.logging.info(res)
+            try:
+                container_ports = container.attrs["NetworkSettings"]["Ports"]
+                if any([str(port) in p for p in container_ports]):
+                    res = container.remove(force=True)
+                    bt.logging.info(f"Removed container {container.name}: {res}")
+            except Exception as e:
+                bt.logging.error(
+                    f"Error while processing container {container.name}: {e}"
+                )
 
     def _build_challenge_image(self):
         """
@@ -209,6 +212,8 @@ class Controller:
             if container.name == self.challenge_name:
                 res = container.remove(force=True)
                 bt.logging.info(res)
+
+        self._clear_container_by_port(constants.CHALLENGE_DOCKER_PORT)
 
     def _submit_challenge_to_miner(self, challenge) -> dict:
         """

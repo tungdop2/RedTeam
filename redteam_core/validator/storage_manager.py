@@ -145,8 +145,7 @@ class StorageManager:
             
             if not os.path.isdir(challenge_folder_path):
                 continue
-            # For each challenge, iterate over the date folders in reverse order
-            for date_str in reversed(date_strings):
+            for date_str in date_strings:
                 date_folder_path = os.path.join(challenge_folder_path, date_str)
 
                 if not os.path.isdir(date_folder_path):
@@ -424,33 +423,37 @@ class StorageManager:
             
         return cache_data
 
-    def update_challenge_records(self, data: dict):
+    def _update_centralized_storage(self, data: dict, url: str):
         """
-        Updates the challenge records in the centralized storage.
+        Generic method to update data in centralized storage.
+        
+        Args:
+            data (dict): Data to update
+            url (str): URL endpoint to send data to
         """
         try:
             response = requests.post(
-                self.centralized_challenge_records_storage_url,
-                json=data,
+                url,
+                json=data, 
                 timeout=20,
             )
             response.raise_for_status()
         except requests.RequestException as e:
-            bt.logging.error(f"Centralized storage update challenge records failed: {e}")
+            bt.logging.error(f"Centralized storage update {url} failed: {e}")
+
+    def update_challenge_records(self, data: dict):
+        """Updates the challenge records in the centralized storage."""
+        self._update_centralized_storage(
+            data,
+            self.centralized_challenge_records_storage_url,
+        )
 
     def update_repo_id(self, data: dict):
-        """
-        Updates the repository ID in the centralized storage.
-        """
-        try:
-            response = requests.post(
-                self.centralized_repo_id_storage_url,
-                json=data,
-                timeout=20,
-            )
-            response.raise_for_status()
-        except requests.RequestException as e:
-            bt.logging.error(f"Centralized storage update repo id failed: {e}")
+        """Updates the repository ID in the centralized storage."""
+        self._update_centralized_storage(
+            data,
+            self.centralized_repo_id_storage_url,
+        )
 
     def hash_encrypted_commit(self, encrypted_commit: str) -> str:
         """
