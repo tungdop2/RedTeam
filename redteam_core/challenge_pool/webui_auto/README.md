@@ -147,15 +147,15 @@ Check with CLI (curl):
 
 ```sh
 # Send a ping request with 'curl' to API server and parse JSON response with 'jq':
-curl -s http://localhost:10001/ping | jq
+curl -s -k https://localhost:10001/ping | jq
 ```
 
 Check with web browser:
 
-- Health check: <http://localhost:10001/health>
-- Swagger: <http://localhost:10001/docs>
-- Redoc: <http://localhost:10001/redoc>
-- OpenAPI JSON: <http://localhost:10001/openapi.json>
+- Health check: <https://localhost:10001/health>
+- Swagger: <https://localhost:10001/docs>
+- Redoc: <https://localhost:10001/redoc>
+- OpenAPI JSON: <https://localhost:10001/openapi.json>
 
 ### 6. 🛑 Stop the server
 
